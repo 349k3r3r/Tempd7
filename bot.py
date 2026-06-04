@@ -77,7 +77,7 @@ CH = {
     "d7_cat":         1512089940387954764,
 }
 
-FOOTER = "Powered by D7 ARMY Middleman Service"
+FOOTER = "Powered by Trading Matrix Middleman Service"
 
 
 # Staff groups
@@ -320,7 +320,7 @@ class MMRequestView(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
-class MMModal(discord.ui.Modal, title="Middleman Ticket | D7 ARMY"):
+class MMModal(discord.ui.Modal, title="Middleman Ticket | Trading Matrix"):
     trading_with = discord.ui.TextInput(
         label="Who are you trading with?",
         style=discord.TextStyle.short,
@@ -384,7 +384,7 @@ class SupportRequestView(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
-class SupportModal(discord.ui.Modal, title="Support Ticket | D7 ARMY"):
+class SupportModal(discord.ui.Modal, title="Support Ticket | Trading Matrix"):
     what  = discord.ui.TextInput(label="What would you like help with?",
                                   style=discord.TextStyle.paragraph, required=True)
     urgency = discord.ui.TextInput(label="How urgent is this? (1-10)",
@@ -565,7 +565,7 @@ async def setup_mm(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
-    embed = discord.Embed(color=0x2b2d31, title="🛡️ D7 ARMY | Welcome to Our MM Service")
+    embed = discord.Embed(color=0x2b2d31, title="🛡️ Trading Matrix | Welcome to Our MM Service")
     embed.add_field(
         name="• Request Middleman",
         value="Read our mm-tos first, then tap **Request Middleman** and fill out the form.",
@@ -592,7 +592,7 @@ async def setup_support(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
-    embed = discord.Embed(color=0x2b2d31, title="🛡️ D7 ARMY | Support")
+    embed = discord.Embed(color=0x2b2d31, title="🛡️ Trading Matrix | Support")
     embed.description = (
         "Need help? Our support team is available **24/7** to assist you with any issues you may have.\n\n"
         "Simply click the **Support** button below to open a private ticket with our staff."
@@ -634,7 +634,7 @@ async def setup_index(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
-    embed = discord.Embed(color=0x2b2d31, title="📋 D7 ARMY | Indexing Service")
+    embed = discord.Embed(color=0x2b2d31, title="📋 Trading Matrix | Indexing Service")
     embed.description = (
         "Request an indexing service by selecting one of the available bases.\n"
         "One of our professional indexers will assist you in completing it!"
@@ -795,13 +795,13 @@ async def cmd_manageban(interaction: discord.Interaction, action: str,
 
 # ─── Info Commands ─────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="rules", description="Display D7 ARMY Rules", guild=GUILD)
+@bot.tree.command(name="rules", description="Display Trading Matrix Rules", guild=GUILD)
 async def cmd_rules(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
     embed = discord.Embed(
-        title="📋 D7 ARMY Marketplace | Rules & Guidelines",
+        title="📋 Trading Matrix Marketplace | Rules & Guidelines",
         color=0x2b2d31
     )
     embed.add_field(name="1. 📜 Follow Discord ToS and Guidelines",
@@ -849,11 +849,11 @@ async def cmd_faq(interaction: discord.Interaction):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
     embed = discord.Embed(
-        title="🛡️ D7 ARMY Marketplace | FAQ",
+        title="🛡️ Trading Matrix Marketplace | FAQ",
         color=0x2b2d31
     )
-    embed.add_field(name="What is D7 ARMY?",
-        value="D7 ARMY is a platform that provides a secure player-to-player marketplace for buyers and sellers of online gaming products. We provide a system for secure transactions — you do the rest. We have marketplaces for **250+ games** and leading titles!",
+    embed.add_field(name="What is Trading Matrix?",
+        value="Trading Matrix is a platform that provides a secure player-to-player marketplace for buyers and sellers of online gaming products. We provide a system for secure transactions — you do the rest. We have marketplaces for **250+ games** and leading titles!",
         inline=False)
     embed.add_field(name="How does the Middleman service work?",
         value="Our verified Middlemen act as trusted third parties to hold and transfer items/funds during a trade. This ensures both parties are protected throughout the entire deal.",
@@ -875,7 +875,7 @@ async def cmd_faq(interaction: discord.Interaction):
     await interaction.response.send_message("✅ Done.", ephemeral=True)
 
 
-@bot.tree.command(name="tos", description="D7 ARMY Trading Terms of Service", guild=GUILD)
+@bot.tree.command(name="tos", description="Trading Matrix Trading Terms of Service", guild=GUILD)
 async def cmd_tos(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
@@ -1480,7 +1480,7 @@ async def dm_role(interaction: discord.Interaction, target: discord.Role, messag
 
 
 
-# ─── D7 ARMY Ticket System ────────────────────────────────────────────────────
+# ─── Trading Matrix Ticket System ────────────────────────────────────────────────────
 
 class D7TicketView(discord.ui.View):
     def __init__(self, creator: str = "Unknown"):
@@ -1516,7 +1516,7 @@ class D7TicketView(discord.ui.View):
         await ch.delete()
 
 
-class D7Modal(discord.ui.Modal, title="D7 ARMY Ticket"):
+class D7Modal(discord.ui.Modal, title="Trading Matrix Ticket"):
     offering = discord.ui.TextInput(
         label="What are you offering for?",
         style=discord.TextStyle.paragraph,
@@ -1550,9 +1550,9 @@ class D7Modal(discord.ui.Modal, title="D7 ARMY Ticket"):
             overwrites=ow,
             topic=str(self.opener.id),
         )
-        embed = discord.Embed(color=0x2b2d31, title="\U0001f3ab D7 ARMY Ticket")
+        embed = discord.Embed(color=0x2b2d31, title="\U0001f3ab Trading Matrix Ticket")
         embed.description = (
-            f"{self.opener.mention}, thank you for opening a D7 ARMY ticket!\n\n"
+            f"{self.opener.mention}, thank you for opening a Trading Matrix ticket!\n\n"
             "DAN7EH will be with you shortly."
         )
         embed.add_field(name="\U0001f4b0 Offering For",      value=str(self.offering),    inline=False)
@@ -1567,7 +1567,7 @@ class D7RequestView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Open D7 ARMY Ticket", style=discord.ButtonStyle.primary,
+    @discord.ui.button(label="Open Trading Matrix Ticket", style=discord.ButtonStyle.primary,
                        emoji="\U0001f3ab", custom_id="v:d7_request")
     async def request(self, interaction: discord.Interaction, btn: discord.ui.Button):
         guild = interaction.guild
@@ -1584,19 +1584,19 @@ class D7RequestView(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
-@bot.tree.command(name="setupd7", description="Post the D7 ARMY ticket panel", guild=GUILD)
+@bot.tree.command(name="setupd7", description="Post the Trading Matrix ticket panel", guild=GUILD)
 async def setup_d7(interaction: discord.Interaction):
     if not any(r.id == SETUP_ROLE for r in interaction.user.roles):
         await interaction.response.send_message("No permission.", ephemeral=True)
         return
-    embed = discord.Embed(color=0x2b2d31, title="\U0001f3ab D7 ARMY Ticket")
+    embed = discord.Embed(color=0x2b2d31, title="\U0001f3ab Trading Matrix Ticket")
     embed.description = (
         "Want to make a trade with **DAN7EH**?\n\n"
         "Click the button below to open a ticket and a staff member will assist you shortly."
     )
     embed.set_footer(text=FOOTER)
     await interaction.channel.send(embed=embed, view=D7RequestView())
-    await interaction.response.send_message("\u2705 D7 ARMY panel deployed.", ephemeral=True)
+    await interaction.response.send_message("\u2705 Trading Matrix panel deployed.", ephemeral=True)
 
 
 
