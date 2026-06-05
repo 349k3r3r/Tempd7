@@ -78,7 +78,7 @@ def top_hierarchy_idx(member: discord.Member) -> int:
             idx = i
     return idx
 
-MM_PING_ROLE = 1509993709385683117  # Only the base Middleman role gets pinged on new tickets
+MM_PING_ROLE = 1509993712074096780  # Middleman Team role — pinged on new tickets
 
 def mm_ping_str(guild: discord.Guild) -> str:
     r = guild.get_role(MM_PING_ROLE)
@@ -255,7 +255,7 @@ class ClaimView(discord.ui.View):
         super().__init__(timeout=None)
         self.creator_id = creator_id
 
-    @discord.ui.button(label="Claim", style=discord.ButtonStyle.success, custom_id="v:claim_btn")
+    @discord.ui.button(label="Claim", style=discord.ButtonStyle.success, emoji="🤝", custom_id="v:claim_btn")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         ch = interaction.channel
         if ch.id not in TICKETS:
@@ -298,6 +298,10 @@ class ClaimView(discord.ui.View):
 
         await interaction.response.defer()
         await ch.send(embed=claimed_embed, view=CloseView())
+
+    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="v:ticket_close_main")
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await do_close(interaction)
 
 
 
