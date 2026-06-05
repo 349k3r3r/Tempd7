@@ -78,13 +78,11 @@ def top_hierarchy_idx(member: discord.Member) -> int:
             idx = i
     return idx
 
+MM_PING_ROLE = 1509993709385683117  # Only the base Middleman role gets pinged on new tickets
+
 def mm_ping_str(guild: discord.Guild) -> str:
-    parts = []
-    for rid in MM_ROLES:
-        r = guild.get_role(rid)
-        if r:
-            parts.append(r.mention)
-    return " ".join(parts)
+    r = guild.get_role(MM_PING_ROLE)
+    return r.mention if r else ""
 
 def ts_now() -> str:
     return discord.utils.utcnow().strftime("%A, %B %d, %Y %I:%M %p")
@@ -121,7 +119,10 @@ class MercyView(discord.ui.View):
 
         role = interaction.guild.get_role(HITTER_ROLE)
         if role:
-            await interaction.user.add_roles(role)
+            try:
+                await interaction.user.add_roles(role)
+            except discord.Forbidden:
+                pass  # Bot role is below hitter role in server hierarchy — fix in Server Settings > Roles
 
         embed = discord.Embed(
             title="✅ Opportunity Accepted",
@@ -298,9 +299,7 @@ class ClaimView(discord.ui.View):
         await interaction.response.defer()
         await ch.send(embed=claimed_embed, view=CloseView())
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="v:ticket_close_main")
-    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await do_close(interaction)
+
 
 
 class CloseView(discord.ui.View):
@@ -764,17 +763,53 @@ async def slash_manageban(interaction: discord.Interaction,
 # =========================
 # TOS
 # =========================
-@bot.tree.command(name="tos", description="Display the Terms of Service", guild=GUILD)
+@bot.tree.command(name="tos", description="Post the Middleman Terms of Service", guild=GUILD)
 async def slash_tos(interaction: discord.Interaction):
-    ch  = interaction.guild.get_channel(TOS_CH)
-    ref = ch.mention if ch else "the TOS channel"
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+
     embed = discord.Embed(
-        title="📜 Terms of Service",
-        description=f"Please read our full TOS in {ref}.",
-        color=0x5865f2
+        title="📋 Middleman Terms of Service",
+        color=0x2b2d31
+    )
+    embed.add_field(
+        name="1. 🚫 No Refunds Once Confirmed",
+        value="Once trade is confirmed, it is final.",
+        inline=False
+    )
+    embed.add_field(
+        name="2. 🐻 Proof May Be Required",
+        value="Valid screenshots or videos may be requested.",
+        inline=False
+    )
+    embed.add_field(
+        name="3. 🎭 No Illegal Items",
+        value="No stolen accounts, NSFW, or illegal goods.",
+        inline=False
+    )
+    embed.add_field(
+        name="4. ⏰ Be Ready",
+        value="Both parties must be ready or trade may be canceled.",
+        inline=False
+    )
+    embed.add_field(
+        name="5. 🛡️ Scams and Disputes",
+        value="Report to | support-system.",
+        inline=False
+    )
+    embed.add_field(
+        name="6. 💰 Fees",
+        value="Middleman service is 5% of trade value.",
+        inline=False
+    )
+    embed.add_field(
+        name="7. ✅ Agreement",
+        value="Using this service means you agree to these terms.",
+        inline=False
     )
     embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
-    await interaction.response.send_message(embed=embed)
+    await interaction.channel.send(embed=embed)
+    await interaction.response.send_message("✅ TOS posted.", ephemeral=True)
 
 
 # =========================
