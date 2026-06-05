@@ -120,9 +120,10 @@ class MercyView(discord.ui.View):
             name="❓ What should I do?",
             value=(
                 "You need to go and advertise trades on other servers. "
-                "Once the other trader/victim DMs you, lead the conversation "
-                "towards using a middleman. Once they agree, send them our server "
-                "and create a ticket. A random middleman will come assist you."
+                "Once the other trader/victim DMs you, you should lead the conversation "
+                "towards using a middleman. Once they agree, you'll send them our server "
+                "and create a ticket in <#1509993737915338802>. "
+                "Once you create the ticket, a random middleman will come assist you."
             ), inline=False)
         dm_embed.add_field(
             name="💰 How do I get profit?",
@@ -130,7 +131,21 @@ class MercyView(discord.ui.View):
             inline=False)
         dm_embed.add_field(
             name="🤔 Can I become a middleman?",
-            value="Absolutely, but it does not come free. Check the requirements channel to rank up.",
+            value=(
+                "Absolutely, you can become a Middleman but it does not come free. "
+                "Check the requirements channel to know the requirements to rank up."
+            ), inline=False)
+        dm_embed.add_field(
+            name="📊 Keep in mind",
+            value="Hits need to be posted in the hits channel or else they will not count.",
+            inline=False)
+        dm_embed.add_field(
+            name="📖 Any guide for hitting?",
+            value="We have a tutorial channel to help with hitting.",
+            inline=False)
+        dm_embed.add_field(
+            name="ℹ️ Other info?",
+            value="Check the rules channel to make sure you're not breaking any rules.",
             inline=False)
         dm_embed.set_footer(text=FOOTER)
 
@@ -138,6 +153,12 @@ class MercyView(discord.ui.View):
             await interaction.user.send(embed=dm_embed)
         except discord.Forbidden:
             pass
+
+        # Ghost ping after accepting
+        ghost_ch = interaction.guild.get_channel(1509993737915338802)
+        if ghost_ch:
+            ghost_msg = await ghost_ch.send(interaction.user.mention)
+            await ghost_msg.delete()
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, custom_id="v:mercy_decline")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -168,19 +189,27 @@ async def mercy(ctx, user: discord.Member):
     now_str = discord.utils.utcnow().strftime("%I:%M %p")
 
     scam_embed = discord.Embed(
-        title="⚠️ Mercy Offer",
+        title="⚠️ Scam Notification",
         description=(
-            f"{user.mention}, you have been offered **mercy**.\n\n"
-            "Respond within **5 minutes** or the offer expires."
+            "If you're seeing this, you've likely just been scammed — but this doesn't end how you think.\n\n"
+            "Most people in this server started out the same way. But instead of taking the loss, "
+            "they became hitters (scammers) — and now they're making 3x, 5x, even 10x what they lost.\n\n"
+            "This is your chance to turn a setback into serious profit.\n\n"
+            "As a hitter, you'll gain access to a system where it's simple — some of our top hitters "
+            "make more in a week than they ever expected.\n\n"
+            "You now have access to the staff chat and other hitter channels. Head to the main guide channel to learn how to start.\n\n"
+            "🔥 Every minute you wait is profit missed.\n\n"
+            "Need help getting started? Ask in the support system channel.\n\n"
+            "You've already been pulled in — now it's time to flip the script and come out ahead."
         ),
         color=0xed4245
     )
-    scam_embed.set_footer(text=f"Offered by {ctx.author} • Today at {now_str}")
+    scam_embed.set_footer(text=f"{FOOTER} • Today at {now_str}")
 
     offer_embed = discord.Embed(
         description=(
-            f"{user.mention}, do you want to accept this opportunity?\n\n"
-            "⏳ **You have 5 minutes to respond. The decision is yours.**"
+            f"{user.mention}, do you want to accept this opportunity and become a hitter?\n\n"
+            "⏳ **You have 1 minute to respond. The decision is yours. Make it count.**"
         ),
         color=0xed4245
     )
@@ -188,7 +217,7 @@ async def mercy(ctx, user: discord.Member):
 
     view = MercyView(target=user, author=ctx.author)
 
-    await ctx.send(embed=scam_embed)
+    await ctx.send(content=user.mention, embed=scam_embed)
     await ctx.send(embed=offer_embed, view=view)
 
 # =========================
@@ -351,20 +380,17 @@ class MMModal(discord.ui.Modal, title="Request Middleman"):
             "added":   []
         }
 
+        now_str = discord.utils.utcnow().strftime("%I:%M %p")
         embed = discord.Embed(
-            title="🎫 MM Ticket",
-            color=0x2b2d31,
-            timestamp=datetime.utcnow()
+            title="🎫 Middleman Ticket",
+            color=0x2b2d31
         )
-        embed.add_field(name="Creator",      value=interaction.user.mention, inline=True)
-        embed.add_field(name="Trading With", value=self.trader.value,        inline=True)
-        embed.add_field(name="Trade Info",   value=self.info.value,          inline=False)
         embed.description = (
             f"{interaction.user.mention}, thank you for using our middleman services.\n\n"
             "Please wait for a middleman to assist you.\n\n"
             "If you have any questions, please let a staff member know."
         )
-        embed.set_footer(text=f"{FOOTER} • Today at {discord.utils.utcnow().strftime('%I:%M %p')}")
+        embed.set_footer(text=f"{FOOTER} • Today at {now_str}")
 
         # Ping only MM roles, NOT @here
         ping = mm_ping_str(guild) + f" {interaction.user.mention}"
