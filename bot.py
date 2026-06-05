@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import json
 import asyncio
@@ -6,27 +7,40 @@ import os
 import io
 from datetime import datetime
 
+# =========================
+# BOT SETUP
+# =========================
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="$", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
+GUILD_ID = 1509986055112233042
+GUILD    = discord.Object(id=GUILD_ID)
 
 # =========================
 # CONFIG
 # =========================
-GUILD_ID = 1509986055112233042
-
 CATEGORY_ID   = 1509993737915338802
 TRANSCRIPT_CH = 1509993884355268680
 TOS_CH        = 1509993970413994054
 LOG_CH        = 1509993876742476000
 
-MERCY_ROLE    = 1509993713596895343
-HITTER_ROLE   = 1509993713596895343   # role given on mercy accept (update if different)
+MERCY_ROLE  = 1509993713596895343
+HITTER_ROLE = 1509993713596895343   # role given on mercy accept
+
+BAN_ROLE_ID = 1512530606884520108   # only role that can use /manageban
 
 MM_ROLES = [
     1509993712074096780,
     1509993711285567651,
     1509993710446706708,
-    1509993709385683117
+    1509993709385683117,
+]
+
+# Hierarchy lowest → highest
+HIERARCHY = [
+    1509993709385683117,  # Middleman
+    1509993710446706708,  # Head MM
+    1509993711285567651,  # Lead MM
+    1509993712074096780,  # MM Manager
 ]
 
 FOOTER = "Gamivo Marketplace"
@@ -53,11 +67,20 @@ temp_store = {}
 # =========================
 # HELPERS
 # =========================
-def is_mm(member):
+def is_mm(member: discord.Member) -> bool:
     return any(r.id in MM_ROLES for r in member.roles)
 
-def mm_ping_str(guild):
-    """Returns a mention string for all MM roles that exist."""
+def has_role(member: discord.Member, role_ids: list) -> bool:
+    return any(r.id in role_ids for r in member.roles)
+
+def top_hierarchy_idx(member: discord.Member) -> int:
+    idx = -1
+    for i, rid in enumerate(HIERARCHY):
+        if any(r.id == rid for r in member.roles):
+            idx = i
+    return idx
+
+def mm_ping_str(guild: discord.Guild) -> str:
     parts = []
     for rid in MM_ROLES:
         r = guild.get_role(rid)
@@ -65,7 +88,13 @@ def mm_ping_str(guild):
             parts.append(r.mention)
     return " ".join(parts)
 
-async def make_transcript(channel):
+def ts_now() -> str:
+    return discord.utils.utcnow().strftime("%A, %B %d, %Y %I:%M %p")
+
+def time_short() -> str:
+    return discord.utils.utcnow().strftime("%I:%M %p")
+
+async def make_transcript(channel: discord.TextChannel) -> io.BytesIO:
     lines = []
     async for msg in channel.history(limit=None, oldest_first=True):
         ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -78,7 +107,7 @@ async def make_transcript(channel):
     return io.BytesIO("\n".join(lines).encode())
 
 # =========================
-# MERCY SYSTEM  (full — from bot_57)
+# MERCY SYSTEM
 # =========================
 class MercyView(discord.ui.View):
     def __init__(self, target=None, author=None):
@@ -99,9 +128,9 @@ class MercyView(discord.ui.View):
         embed = discord.Embed(
             title="✅ Opportunity Accepted",
             description=f"{interaction.user.mention} has accepted the opportunity and has been verified.",
-            color=discord.Color.green()
+            color=0x57f287
         )
-        embed.set_footer(text=f"{FOOTER} • Today at {discord.utils.utcnow().strftime('%I:%M %p')}")
+        embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
 
         for child in self.children:
             child.disabled = True
@@ -110,7 +139,6 @@ class MercyView(discord.ui.View):
 
         await interaction.response.edit_message(embed=embed, view=self)
 
-        # DM tutorial
         dm_embed = discord.Embed(title="💫 Hitting Tutorial", color=0x2b2d31)
         dm_embed.description = (
             "You're a hitter now. A hitter is someone that got scammed by us, "
@@ -120,10 +148,9 @@ class MercyView(discord.ui.View):
             name="❓ What should I do?",
             value=(
                 "You need to go and advertise trades on other servers. "
-                "Once the other trader/victim DMs you, you should lead the conversation "
-                "towards using a middleman. Once they agree, you'll send them our server "
-                "and create a ticket in <#1509993737915338802>. "
-                "Once you create the ticket, a random middleman will come assist you."
+                "Once the other trader/victim DMs you, lead the conversation towards using a middleman. "
+                f"Once they agree, send them our server and create a ticket in <#{CATEGORY_ID}>. "
+                "A random middleman will come assist you."
             ), inline=False)
         dm_embed.add_field(
             name="💰 How do I get profit?",
@@ -131,13 +158,11 @@ class MercyView(discord.ui.View):
             inline=False)
         dm_embed.add_field(
             name="🤔 Can I become a middleman?",
-            value=(
-                "Absolutely, you can become a Middleman but it does not come free. "
-                "Check the requirements channel to know the requirements to rank up."
-            ), inline=False)
+            value="Absolutely, but it does not come free. Check the requirements channel to rank up.",
+            inline=False)
         dm_embed.add_field(
             name="📊 Keep in mind",
-            value="Hits need to be posted in the hits channel or else they will not count.",
+            value="Hits need to be posted in the hits channel or they will not count.",
             inline=False)
         dm_embed.add_field(
             name="📖 Any guide for hitting?",
@@ -154,8 +179,7 @@ class MercyView(discord.ui.View):
         except discord.Forbidden:
             pass
 
-        # Ghost ping after accepting
-        ghost_ch = interaction.guild.get_channel(1509993737915338802)
+        ghost_ch = interaction.guild.get_channel(CATEGORY_ID)
         if ghost_ch:
             ghost_msg = await ghost_ch.send(interaction.user.mention)
             await ghost_msg.delete()
@@ -169,9 +193,9 @@ class MercyView(discord.ui.View):
         embed = discord.Embed(
             title="❌ Opportunity Declined",
             description=f"{interaction.user.mention} has declined the opportunity.",
-            color=discord.Color.red()
+            color=0xed4245
         )
-        embed.set_footer(text=f"{FOOTER} • Today at {discord.utils.utcnow().strftime('%I:%M %p')}")
+        embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
 
         for child in self.children:
             child.disabled = True
@@ -181,12 +205,14 @@ class MercyView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
 
-@bot.command()
-async def mercy(ctx, user: discord.Member):
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can use this command.", delete_after=5)
+@bot.tree.command(name="mercy", description="Send a mercy offer to a user", guild=GUILD)
+@app_commands.describe(user="User to send mercy to")
+async def slash_mercy(interaction: discord.Interaction, user: discord.Member):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
 
-    now_str = discord.utils.utcnow().strftime("%I:%M %p")
+    await interaction.response.defer(ephemeral=True)
+    now = time_short()
 
     scam_embed = discord.Embed(
         title="⚠️ Scam Notification",
@@ -197,14 +223,15 @@ async def mercy(ctx, user: discord.Member):
             "This is your chance to turn a setback into serious profit.\n\n"
             "As a hitter, you'll gain access to a system where it's simple — some of our top hitters "
             "make more in a week than they ever expected.\n\n"
-            "You now have access to the staff chat and other hitter channels. Head to the main guide channel to learn how to start.\n\n"
+            "You now have access to the staff chat and other hitter channels. "
+            "Head to the main guide channel to learn how to start.\n\n"
             "🔥 Every minute you wait is profit missed.\n\n"
             "Need help getting started? Ask in the support system channel.\n\n"
             "You've already been pulled in — now it's time to flip the script and come out ahead."
         ),
         color=0xed4245
     )
-    scam_embed.set_footer(text=f"{FOOTER} • Today at {now_str}")
+    scam_embed.set_footer(text=f"{FOOTER} • Today at {now}")
 
     offer_embed = discord.Embed(
         description=(
@@ -213,22 +240,23 @@ async def mercy(ctx, user: discord.Member):
         ),
         color=0xed4245
     )
-    offer_embed.set_footer(text=f"{FOOTER} • Today at {now_str}")
+    offer_embed.set_footer(text=f"{FOOTER} • Today at {now}")
 
-    view = MercyView(target=user, author=ctx.author)
+    view = MercyView(target=user, author=interaction.user)
+    await interaction.channel.send(content=user.mention, embed=scam_embed)
+    await interaction.channel.send(embed=offer_embed, view=view)
+    await interaction.followup.send("✅ Mercy sent.", ephemeral=True)
 
-    await ctx.send(content=user.mention, embed=scam_embed)
-    await ctx.send(embed=offer_embed, view=view)
 
 # =========================
-# CLAIM SYSTEM
+# TICKET SYSTEM
 # =========================
 class ClaimView(discord.ui.View):
     def __init__(self, creator_id=None):
         super().__init__(timeout=None)
         self.creator_id = creator_id
 
-    @discord.ui.button(label="Claim", style=discord.ButtonStyle.green, custom_id="v:claim_btn")
+    @discord.ui.button(label="Claim", style=discord.ButtonStyle.success, custom_id="v:claim_btn")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         ch = interaction.channel
         if ch.id not in TICKETS:
@@ -244,7 +272,6 @@ class ClaimView(discord.ui.View):
 
         data["claimed"] = interaction.user.id
 
-        # Lock to claimer + creator only
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -259,25 +286,25 @@ class ClaimView(discord.ui.View):
 
         await ch.edit(overwrites=overwrites)
 
-        # Disable the claim button
         button.disabled = True
         button.label = "Claimed"
         await interaction.message.edit(view=self)
 
-        # Send claimed embed + close button
         claimed_embed = discord.Embed(
             title="✅ Ticket Claimed",
             description=f"{interaction.user.mention} will be your Middleman for today.",
             color=0x57f287
         )
-        claimed_embed.set_footer(text=f"{FOOTER} • Today at {discord.utils.utcnow().strftime('%I:%M %p')}")
+        claimed_embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
 
         await interaction.response.defer()
         await ch.send(embed=claimed_embed, view=CloseView())
 
-# =========================
-# CLOSE SYSTEM
-# =========================
+    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="v:ticket_close_main")
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await do_close(interaction)
+
+
 class CloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -287,71 +314,37 @@ class CloseView(discord.ui.View):
         await do_close(interaction)
 
 
-async def do_close(ctx_or_interaction):
-    """Works with both a ctx (command) and an interaction (button)."""
-    is_interaction = isinstance(ctx_or_interaction, discord.Interaction)
-    ch    = ctx_or_interaction.channel
-    guild = ctx_or_interaction.guild
-    user  = ctx_or_interaction.user if is_interaction else ctx_or_interaction.author
+async def do_close(interaction: discord.Interaction):
+    ch    = interaction.channel
+    guild = interaction.guild
 
     if ch.id not in TICKETS:
-        msg = "This is not a ticket channel."
-        if is_interaction:
-            return await ctx_or_interaction.response.send_message(msg, ephemeral=True)
-        return await ch.send(msg)
+        return await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
 
     data = TICKETS[ch.id]
+    buf  = await make_transcript(ch)
 
-    # Build transcript
-    buf = await make_transcript(ch)
-
-    # Send to transcript channel
     tr_ch = guild.get_channel(TRANSCRIPT_CH)
     if tr_ch:
         embed = discord.Embed(
             title=f"📋 Transcript — {ch.name}",
             color=0xfee75c,
-            timestamp=datetime.utcnow()
+            timestamp=discord.utils.utcnow()
         )
         creator = guild.get_member(data.get("creator"))
         claimer = guild.get_member(data.get("claimed")) if data.get("claimed") else None
         embed.add_field(name="Ticket Creator", value=creator.mention if creator else "Unknown", inline=True)
         embed.add_field(name="Claimed By",     value=claimer.mention if claimer else "Unclaimed", inline=True)
-        embed.add_field(name="Closed By",      value=user.mention,    inline=True)
+        embed.add_field(name="Closed By",      value=interaction.user.mention, inline=True)
         embed.set_footer(text=FOOTER)
-        buf2 = await make_transcript(ch)
-        await tr_ch.send(embed=embed, file=discord.File(buf2, filename=f"transcript-{ch.name}.txt"))
+        await tr_ch.send(embed=embed, file=discord.File(buf, filename=f"transcript-{ch.name}.txt"))
 
-    # DM transcript to added users
-    for uid in data.get("added", []):
-        m = guild.get_member(uid)
-        if m:
-            try:
-                buf3 = await make_transcript(ch)
-                await m.send(
-                    f"📋 Transcript for `{ch.name}`",
-                    file=discord.File(buf3, filename=f"transcript-{ch.name}.txt")
-                )
-            except:
-                pass
-
-    if is_interaction:
-        await ctx_or_interaction.response.send_message("🔒 Closing ticket in 5 seconds...")
-    else:
-        await ch.send("🔒 Closing ticket in 5 seconds...")
-
+    await interaction.response.send_message("🔒 Closing ticket in 5 seconds...")
     await asyncio.sleep(5)
     TICKETS.pop(ch.id, None)
     await ch.delete()
 
 
-@bot.command()
-async def close(ctx):
-    await do_close(ctx)
-
-# =========================
-# MODAL
-# =========================
 class MMModal(discord.ui.Modal, title="Request Middleman"):
     trader = discord.ui.TextInput(
         label="Who are you trading with?",
@@ -359,7 +352,7 @@ class MMModal(discord.ui.Modal, title="Request Middleman"):
         required=True
     )
     info = discord.ui.TextInput(
-        label="What is the trade info?",
+        label="What is the trade?",
         style=discord.TextStyle.paragraph,
         placeholder="Describe what items/currency are being traded...",
         required=True
@@ -367,40 +360,26 @@ class MMModal(discord.ui.Modal, title="Request Middleman"):
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
-
-        ch = await guild.create_text_channel(
+        ch    = await guild.create_text_channel(
             name=f"ticket-{interaction.user.name}",
             category=guild.get_channel(CATEGORY_ID),
             topic=str(interaction.user.id)
         )
+        TICKETS[ch.id] = {"creator": interaction.user.id, "claimed": None, "added": []}
 
-        TICKETS[ch.id] = {
-            "creator": interaction.user.id,
-            "claimed": None,
-            "added":   []
-        }
-
-        now_str = discord.utils.utcnow().strftime("%I:%M %p")
-        embed = discord.Embed(
-            title="🎫 Middleman Ticket",
-            color=0x2b2d31
-        )
+        embed = discord.Embed(title="🎫 Middleman Ticket", color=0x2b2d31)
         embed.description = (
             f"{interaction.user.mention}, thank you for using our middleman services.\n\n"
             "Please wait for a middleman to assist you.\n\n"
             "If you have any questions, please let a staff member know."
         )
-        embed.set_footer(text=f"{FOOTER} • Today at {now_str}")
+        embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
 
-        # Ping only MM roles, NOT @here
         ping = mm_ping_str(guild) + f" {interaction.user.mention}"
-
         await ch.send(content=ping, embed=embed, view=ClaimView(creator_id=interaction.user.id))
         await interaction.response.send_message(f"✅ Ticket created: {ch.mention}", ephemeral=True)
 
-# =========================
-# PANEL  (matches screenshot)
-# =========================
+
 class MMPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -411,62 +390,89 @@ class MMPanel(discord.ui.View):
         await interaction.response.send_modal(MMModal())
 
 
-@bot.command()
-async def setup(ctx):
-    embed = discord.Embed(
-        title="🛡️ Middleman Services",
-        color=0x2b2d31
-    )
+@bot.tree.command(name="setup", description="Post the MM request panel", guild=GUILD)
+async def slash_setup(interaction: discord.Interaction):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    embed = discord.Embed(title="🛡️ Middleman Services", color=0x2b2d31)
     embed.add_field(
         name="Middleman Service",
-        value=(
-            "• To request a middleman from this server, click the blue **\"Request Middleman\"** "
-            "button on this message."
-        ),
-        inline=False
-    )
+        value="To request a middleman, click the **Request Middleman** button below.",
+        inline=False)
     embed.add_field(
         name="How does middleman work?",
         value=(
-            "• Example: Trade is Frost Dragon for Corrupt.\n"
-            "• Trader #1 gives Frost Dragon to middleman.\n"
-            "• Trader #2 gives Corrupt to middleman.\n"
-            "• Middleman gives the respective pets to each trader."
+            "• Trader #1 gives their item to the middleman.\n"
+            "• Trader #2 gives their item to the middleman.\n"
+            "• Middleman gives each trader their respective item."
         ),
-        inline=False
-    )
+        inline=False)
     embed.add_field(
-        name="⚠️ DISCLAIMER!",
-        value=(
-            "You must both agree on the deal before using a middleman. "
-            "Troll tickets will have consequences."
-        ),
-        inline=False
+        name="⚠️ DISCLAIMER",
+        value="You must both agree on the deal before using a middleman. Troll tickets will have consequences.",
+        inline=False)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.channel.send(embed=embed, view=MMPanel())
+    await interaction.response.send_message("✅ Panel deployed.", ephemeral=True)
+
+
+@bot.tree.command(name="close", description="Close this ticket", guild=GUILD)
+async def slash_close(interaction: discord.Interaction):
+    await do_close(interaction)
+
+
+@bot.tree.command(name="add", description="Add a user to this ticket", guild=GUILD)
+@app_commands.describe(user="User to add")
+async def slash_add(interaction: discord.Interaction, user: discord.Member):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    ch = interaction.channel
+    if ch.id not in TICKETS:
+        return await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
+    TICKETS[ch.id]["added"].append(user.id)
+    await ch.set_permissions(user, view_channel=True, send_messages=True)
+    embed = discord.Embed(
+        description=f"✅ {user.mention} has been added to the ticket by {interaction.user.mention}.",
+        color=0x57f287
     )
-    embed.set_footer(text=f"{FOOTER} • Today at {discord.utils.utcnow().strftime('%I:%M %p')}")
-    await ctx.send(embed=embed, view=MMPanel())
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="remove", description="Remove a user from this ticket", guild=GUILD)
+@app_commands.describe(user="User to remove")
+async def slash_remove(interaction: discord.Interaction, user: discord.Member):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    ch = interaction.channel
+    if ch.id not in TICKETS:
+        return await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
+    if user.id in TICKETS[ch.id]["added"]:
+        TICKETS[ch.id]["added"].remove(user.id)
+    await ch.set_permissions(user, overwrite=None)
+    embed = discord.Embed(
+        description=f"❌ {user.mention} has been removed from the ticket by {interaction.user.mention}.",
+        color=0xed4245
+    )
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
 
 # =========================
-# CONFIRM SYSTEM  (from bot_57 TradeView)
+# TRADE CONFIRM
 # =========================
 class TradeView(discord.ui.View):
     def __init__(self, t1: int, t2: int, mm: int):
         super().__init__(timeout=None)
-        self.t1        = t1
-        self.t2        = t2
-        self.mm        = mm
+        self.t1 = t1
+        self.t2 = t2
+        self.mm = mm
         self.confirmed: set = set()
 
-        b1 = discord.ui.Button(
-            label="✅ Confirm Trade (Trader 1)",
-            style=discord.ButtonStyle.success,
-            custom_id=f"trade_t1_{t1}_{t2}"
-        )
-        b2 = discord.ui.Button(
-            label="✅ Confirm Trade (Trader 2)",
-            style=discord.ButtonStyle.success,
-            custom_id=f"trade_t2_{t1}_{t2}"
-        )
+        b1 = discord.ui.Button(label="✅ Confirm Trade (Trader 1)", style=discord.ButtonStyle.success,
+                                custom_id=f"trade_t1_{t1}_{t2}")
+        b2 = discord.ui.Button(label="✅ Confirm Trade (Trader 2)", style=discord.ButtonStyle.success,
+                                custom_id=f"trade_t2_{t1}_{t2}")
         b1.callback = self._confirm_t1
         b2.callback = self._confirm_t2
         self.add_item(b1)
@@ -491,25 +497,25 @@ class TradeView(discord.ui.View):
         mm  = guild.get_member(self.mm)
         t1c = self.t1 in self.confirmed
         t2c = self.t2 in self.confirmed
-        old = interaction.message.embeds[0]
+        old     = interaction.message.embeds[0]
         details = old.fields[0].value if old.fields else "—"
 
         if t1c and t2c:
             embed = discord.Embed(color=0x57f287, title="✅ Trade Confirmed")
-            embed.description = "Both traders have confirmed. Please proceed with the rest of the trade."
+            embed.description = "Both traders have confirmed. Please proceed with the trade."
             embed.add_field(name="🔵 Trader 1",  value=m1.mention if m1 else str(self.t1), inline=True)
             embed.add_field(name="🔵 Trader 2",  value=m2.mention if m2 else str(self.t2), inline=True)
             embed.add_field(name="🛡️ Middleman", value=mm.mention if mm else str(self.mm), inline=False)
-            embed.add_field(name="✅ Status",     value="Both traders confirmed",           inline=False)
+            embed.add_field(name="✅ Status",     value="Both traders confirmed", inline=False)
             embed.set_footer(text=FOOTER)
             for item in self.children:
                 item.disabled = True
-                item.label    = "Trade Confirmed"
+                item.label = "Trade Confirmed"
         else:
             t1d = "🟢" if t1c else "🔴"
             t2d = "🟢" if t2c else "🔴"
             embed = discord.Embed(color=0x2b2d31, title="✅ Trade Confirmation")
-            embed.description = "In order to continue this trade, both traders should confirm the trade."
+            embed.description = "Both traders need to confirm to continue."
             embed.add_field(name="📊 Trade Information", value=details, inline=False)
             embed.add_field(name="🔵 Trader 1",  value=m1.mention if m1 else str(self.t1), inline=True)
             embed.add_field(name="🔵 Trader 2",  value=m2.mention if m2 else str(self.t2), inline=True)
@@ -517,8 +523,7 @@ class TradeView(discord.ui.View):
             embed.add_field(
                 name="⏳ Awaiting Confirmation",
                 value=f"{t1d} {m1.mention if m1 else str(self.t1)}\n{t2d} {m2.mention if m2 else str(self.t2)}",
-                inline=False
-            )
+                inline=False)
             embed.set_footer(text=FOOTER)
             for item in self.children:
                 if "t1" in item.custom_id and t1c:
@@ -530,105 +535,66 @@ class TradeView(discord.ui.View):
         await interaction.response.defer()
 
 
-@bot.command()
-async def confirm(ctx, trader1: discord.Member, trader2: discord.Member, *, details: str = "No details provided."):
-    """Usage: $confirm @trader1 @trader2 <trade details>"""
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can start a confirmation.")
+@bot.tree.command(name="confirm", description="Start a trade confirmation", guild=GUILD)
+@app_commands.describe(trader1="First trader", trader2="Second trader", details="Trade details")
+async def slash_confirm(interaction: discord.Interaction,
+                        trader1: discord.Member, trader2: discord.Member, details: str):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
 
-    view  = TradeView(t1=trader1.id, t2=trader2.id, mm=ctx.author.id)
+    view  = TradeView(t1=trader1.id, t2=trader2.id, mm=interaction.user.id)
     embed = discord.Embed(color=0x2b2d31, title="✅ Trade Confirmation")
-    embed.description = "In order to continue this trade, both traders should confirm the trade."
-    embed.add_field(name="📊 Trade Information", value=details,          inline=False)
-    embed.add_field(name="🔵 Trader 1",          value=trader1.mention,  inline=True)
-    embed.add_field(name="🔵 Trader 2",          value=trader2.mention,  inline=True)
-    embed.add_field(name="🛡️ Middleman",         value=ctx.author.mention, inline=False)
-    embed.add_field(
-        name="⏳ Awaiting Confirmation",
-        value=f"🔴 {trader1.mention}\n🔴 {trader2.mention}",
-        inline=False
-    )
+    embed.description = "Both traders need to confirm to continue."
+    embed.add_field(name="📊 Trade Information", value=details,                  inline=False)
+    embed.add_field(name="🔵 Trader 1",          value=trader1.mention,          inline=True)
+    embed.add_field(name="🔵 Trader 2",          value=trader2.mention,          inline=True)
+    embed.add_field(name="🛡️ Middleman",         value=interaction.user.mention, inline=False)
+    embed.add_field(name="⏳ Awaiting Confirmation",
+                    value=f"🔴 {trader1.mention}\n🔴 {trader2.mention}",         inline=False)
     embed.set_footer(text=FOOTER)
-    await ctx.send(content=f"{trader1.mention} {trader2.mention}", embed=embed, view=view)
+    await interaction.response.send_message(
+        content=f"{trader1.mention} {trader2.mention}", embed=embed, view=view)
 
-# =========================
-# ADD / REMOVE USERS
-# =========================
-@bot.command()
-async def add(ctx, user: discord.Member):
-    if ctx.channel.id not in TICKETS:
-        return await ctx.send("This is not a ticket channel.")
-    TICKETS[ctx.channel.id]["added"].append(user.id)
-    await ctx.channel.set_permissions(user, view_channel=True, send_messages=True)
-    embed = discord.Embed(description=f"✅ {user.mention} has been added to the ticket.", color=0x57f287)
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def remove(ctx, user: discord.Member):
-    if ctx.channel.id not in TICKETS:
-        return await ctx.send("This is not a ticket channel.")
-    if user.id in TICKETS[ctx.channel.id]["added"]:
-        TICKETS[ctx.channel.id]["added"].remove(user.id)
-    await ctx.channel.set_permissions(user, overwrite=None)
-    embed = discord.Embed(description=f"❌ {user.mention} has been removed from the ticket.", color=0xed4245)
-    await ctx.send(embed=embed)
-
-# =========================
-# CLAIM / UNCLAIM COMMANDS
-# =========================
-@bot.command()
-async def claim(ctx):
-    if ctx.channel.id not in TICKETS:
-        return await ctx.send("This is not a ticket channel.")
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can claim tickets.")
-    data = TICKETS[ctx.channel.id]
-    if data.get("claimed"):
-        return await ctx.send("This ticket is already claimed.")
-    data["claimed"] = ctx.author.id
-    embed = discord.Embed(description=f"✅ Ticket claimed by {ctx.author.mention}", color=0x57f287)
-    await ctx.send(embed=embed, view=CloseView())
-
-@bot.command()
-async def unclaim(ctx):
-    if ctx.channel.id not in TICKETS:
-        return await ctx.send("This is not a ticket channel.")
-    TICKETS[ctx.channel.id]["claimed"] = None
-    embed = discord.Embed(description="🔓 Ticket has been unclaimed.", color=0xfee75c)
-    await ctx.send(embed=embed)
 
 # =========================
 # VOUCH SYSTEM
 # =========================
-@bot.command()
-async def addvouch(ctx, user: discord.Member, amt: int = 1):
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can add vouches.")
+@bot.tree.command(name="addvouch", description="Add vouches to a user", guild=GUILD)
+@app_commands.describe(user="Target user", amount="Number of vouches to add")
+async def slash_addvouch(interaction: discord.Interaction, user: discord.Member, amount: int = 1):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
     uid = str(user.id)
-    vouches_data[uid] = vouches_data.get(uid, 0) + amt
+    vouches_data[uid] = vouches_data.get(uid, 0) + amount
     save("vouches.json", vouches_data)
     embed = discord.Embed(
-        description=f"✅ Added **{amt}** vouch(es) to {user.mention}. Total: **{vouches_data[uid]}**",
+        description=f"✅ Added **{amount}** vouch(es) to {user.mention}. Total: **{vouches_data[uid]}**",
         color=0x57f287
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
 
-@bot.command()
-async def removevouch(ctx, user: discord.Member, amt: int = 1):
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can remove vouches.")
+
+@bot.tree.command(name="removevouch", description="Remove vouches from a user", guild=GUILD)
+@app_commands.describe(user="Target user", amount="Number of vouches to remove")
+async def slash_removevouch(interaction: discord.Interaction, user: discord.Member, amount: int = 1):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
     uid = str(user.id)
-    vouches_data[uid] = max(0, vouches_data.get(uid, 0) - amt)
+    vouches_data[uid] = max(0, vouches_data.get(uid, 0) - amount)
     save("vouches.json", vouches_data)
     embed = discord.Embed(
-        description=f"✅ Removed **{amt}** vouch(es) from {user.mention}. Total: **{vouches_data[uid]}**",
+        description=f"✅ Removed **{amount}** vouch(es) from {user.mention}. Total: **{vouches_data[uid]}**",
         color=0xed4245
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
 
-@bot.command(name="vouches")
-async def check_vouches(ctx, user: discord.Member = None):
-    target = user or ctx.author
+
+@bot.tree.command(name="vouches", description="Check a user's vouch count", guild=GUILD)
+@app_commands.describe(user="User to check (leave blank for yourself)")
+async def slash_vouches(interaction: discord.Interaction, user: discord.Member = None):
+    target = user or interaction.user
     uid    = str(target.id)
     count  = vouches_data.get(uid, 0)
     embed  = discord.Embed(
@@ -636,12 +602,16 @@ async def check_vouches(ctx, user: discord.Member = None):
         description=f"{target.mention} has **{count}** vouch(es).",
         color=0x5865f2
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
 
 # =========================
 # PROFIT / LOG SYSTEM
 # =========================
-async def send_log(ctx, mm: discord.Member, hitter: discord.Member, hit_info: str, split: str):
+async def send_log_embed(interaction: discord.Interaction,
+                         mm: discord.Member, hitter: discord.Member,
+                         hit_info: str, split: str):
     uid = str(mm.id)
     try:
         split_num = int(split.replace(",", "").replace("$", "").strip())
@@ -651,130 +621,228 @@ async def send_log(ctx, mm: discord.Member, hitter: discord.Member, hit_info: st
     except ValueError:
         total_str = "N/A"
 
-    log_channel = ctx.guild.get_channel(LOG_CH)
-    if not log_channel:
-        return await ctx.send("⚠️ Log channel not found.")
+    log_ch = interaction.guild.get_channel(LOG_CH)
+    if not log_ch:
+        return await interaction.followup.send("⚠️ Log channel not found.", ephemeral=True)
 
-    embed = discord.Embed(title="💰 Trade Log", color=0x57f287, timestamp=datetime.utcnow())
+    embed = discord.Embed(title="💰 Trade Log", color=0x57f287, timestamp=discord.utils.utcnow())
     embed.add_field(name="Middleman", value=mm.mention,     inline=True)
     embed.add_field(name="Hitter",    value=hitter.mention, inline=True)
     embed.add_field(name="\u200b",    value="\u200b",        inline=True)
     embed.add_field(name="Hit Info",  value=hit_info,        inline=False)
     embed.add_field(name="Split",     value=split,           inline=True)
     embed.add_field(name="MM Total",  value=total_str,       inline=True)
-    embed.set_footer(text=f"Logged by {ctx.author} • {ctx.author.id}")
+    embed.set_footer(text=f"Logged by {interaction.user} • {interaction.user.id}")
+    await log_ch.send(embed=embed)
 
-    await log_channel.send(embed=embed)
-    await ctx.message.add_reaction("✅")
 
-@bot.command(name="log")
-async def log_cmd(ctx, hitter: discord.Member, *, rest: str):
-    """Usage: $log @hitter <hit info> | <split>"""
-    if "|" not in rest:
-        return await ctx.send("Usage: `$log @hitter <hit info> | <split>`")
-    hit_info, split = [x.strip() for x in rest.split("|", 1)]
-    await send_log(ctx, ctx.author, hitter, hit_info, split)
+@bot.tree.command(name="log", description="Log a hit/trade", guild=GUILD)
+@app_commands.describe(hitter="The hitter", hit_info="What was hit", split="Your split amount")
+async def slash_log(interaction: discord.Interaction,
+                    hitter: discord.Member, hit_info: str, split: str):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    await send_log_embed(interaction, interaction.user, hitter, hit_info, split)
+    await interaction.followup.send("✅ Logged.", ephemeral=True)
 
-@bot.command(name="altlog")
-async def altlog_cmd(ctx, mm: discord.Member, hitter: discord.Member, *, rest: str):
-    """Usage: $altlog @mm @hitter <hit info> | <split>"""
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can use altlog.")
-    if "|" not in rest:
-        return await ctx.send("Usage: `$altlog @mm @hitter <hit info> | <split>`")
-    hit_info, split = [x.strip() for x in rest.split("|", 1)]
-    await send_log(ctx, mm, hitter, hit_info, split)
 
-@bot.command()
-async def checkprofit(ctx, user: discord.Member = None):
-    target = user or ctx.author
+@bot.tree.command(name="altlog", description="Log a hit on behalf of another MM", guild=GUILD)
+@app_commands.describe(mm="The middleman", hitter="The hitter", hit_info="What was hit", split="Split amount")
+async def slash_altlog(interaction: discord.Interaction,
+                       mm: discord.Member, hitter: discord.Member,
+                       hit_info: str, split: str):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    await send_log_embed(interaction, mm, hitter, hit_info, split)
+    await interaction.followup.send("✅ Logged.", ephemeral=True)
+
+
+@bot.tree.command(name="checkprofit", description="Check a user's logged profit", guild=GUILD)
+@app_commands.describe(user="User to check (leave blank for yourself)")
+async def slash_checkprofit(interaction: discord.Interaction, user: discord.Member = None):
+    target = user or interaction.user
     uid    = str(target.id)
     amount = profit_data.get(uid, 0)
     embed  = discord.Embed(
-        title="Profit",
+        title="💰 Profit",
         description=f"{target.mention} has logged **{amount:,}** in profit.",
         color=0x57f287
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
 
-# =========================
-# TRANSFER
-# =========================
-@bot.command()
-async def transfer(ctx, user: discord.Member, amount: int):
-    if not is_mm(ctx.author):
-        return await ctx.send("Only middlemen can transfer profit.")
-    sender_id   = str(ctx.author.id)
+
+@bot.tree.command(name="transfer", description="Transfer profit to another MM", guild=GUILD)
+@app_commands.describe(user="Recipient", amount="Amount to transfer")
+async def slash_transfer(interaction: discord.Interaction, user: discord.Member, amount: int):
+    if not is_mm(interaction.user):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+    sender_id   = str(interaction.user.id)
     receiver_id = str(user.id)
     if profit_data.get(sender_id, 0) < amount:
-        return await ctx.send("Insufficient balance.")
+        return await interaction.response.send_message("❌ Insufficient balance.", ephemeral=True)
     profit_data[sender_id]   = profit_data.get(sender_id, 0) - amount
     profit_data[receiver_id] = profit_data.get(receiver_id, 0) + amount
     save("profit.json", profit_data)
     embed = discord.Embed(
-        description=f"💸 Transferred **{amount:,}** from {ctx.author.mention} to {user.mention}.",
+        description=f"💸 Transferred **{amount:,}** from {interaction.user.mention} to {user.mention}.",
         color=0x57f287
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
 
-# =========================
-# ROLE SYSTEM
-# =========================
-@bot.command()
-async def role(ctx, user: discord.Member, *, r: discord.Role):
-    if not is_mm(ctx.author):
-        return await ctx.send("You don't have permission.")
-    await user.add_roles(r)
-    embed = discord.Embed(description=f"✅ Gave {r.mention} to {user.mention}.", color=0x57f287)
-    await ctx.send(embed=embed)
 
 # =========================
 # TEMP SYSTEM
 # =========================
-@bot.command()
-async def temp(ctx):
-    m = ctx.author
-    if m.id in temp_store:
-        for r in temp_store.pop(m.id):
+@bot.tree.command(name="temp", description="Toggle your MM roles on/off temporarily", guild=GUILD)
+async def slash_temp(interaction: discord.Interaction):
+    member = interaction.user
+    if member.id in temp_store:
+        for r in temp_store.pop(member.id):
             try:
-                await m.add_roles(r)
+                await member.add_roles(r)
             except:
                 pass
         embed = discord.Embed(description="✅ MM roles restored.", color=0x57f287)
-        return await ctx.send(embed=embed)
+        embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    removed = [r for r in m.roles if r.id in MM_ROLES]
-    temp_store[m.id] = removed
+    removed = [r for r in member.roles if r.id in MM_ROLES]
+    if not removed:
+        return await interaction.response.send_message("You have no MM roles to remove.", ephemeral=True)
+
+    temp_store[member.id] = removed
     for r in removed:
         try:
-            await m.remove_roles(r)
+            await member.remove_roles(r)
         except:
             pass
-    mercy_role = ctx.guild.get_role(MERCY_ROLE)
+    mercy_role = interaction.guild.get_role(MERCY_ROLE)
     if mercy_role:
-        await m.add_roles(mercy_role)
+        await member.add_roles(mercy_role)
+
     embed = discord.Embed(
-        description="✅ MM roles temporarily removed. Run `$temp` again to restore.",
+        description="✅ MM roles temporarily removed. Run `/temp` again to restore.",
         color=0xfee75c
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# =========================
+# MANAGE ROLE  (screenshot style)
+# =========================
+@bot.tree.command(name="managerole", description="Give or remove a role from a user", guild=GUILD)
+@app_commands.describe(
+    action="add or remove",
+    user="Target user",
+    role="Role to manage",
+    reason="Reason"
+)
+@app_commands.choices(action=[
+    app_commands.Choice(name="add",    value="add"),
+    app_commands.Choice(name="remove", value="remove"),
+])
+async def slash_managerole(interaction: discord.Interaction,
+                            action: str,
+                            user: discord.Member,
+                            role: discord.Role,
+                            reason: str):
+    executor_idx = top_hierarchy_idx(interaction.user)
+    if executor_idx == -1:
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+
+    # Can only manage roles below their own level
+    try:
+        target_idx = HIERARCHY.index(role.id)
+    except ValueError:
+        # Role not in hierarchy — only top rank can assign non-hierarchy roles
+        if executor_idx < len(HIERARCHY) - 1:
+            return await interaction.response.send_message(
+                "❌ You can only manage roles within the hierarchy.", ephemeral=True)
+        target_idx = 0  # allow
+
+    if target_idx >= executor_idx:
+        return await interaction.response.send_message(
+            "❌ You can only manage roles below your own rank.", ephemeral=True)
+
+    if action == "add":
+        await user.add_roles(role, reason=reason)
+        title, color = "Role Given ✅", 0x57f287
+    else:
+        await user.remove_roles(role, reason=reason)
+        title, color = "Role Removed ❌", 0xed4245
+
+    embed = discord.Embed(title=title, color=color)
+    embed.add_field(name="Actioned By", value=f"{interaction.user} ({interaction.user.id})", inline=False)
+    embed.add_field(name="Target User", value=f"{user} ({user.id})",                         inline=False)
+    embed.add_field(name="Role",        value=role.name,                                      inline=False)
+    embed.add_field(name="Reason",      value=reason,                                         inline=False)
+    embed.add_field(name="Time",        value=ts_now(),                                       inline=False)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
+
+# =========================
+# MANAGE BAN  (screenshot style)
+# =========================
+@bot.tree.command(name="manageban", description="Ban or unban a user", guild=GUILD)
+@app_commands.describe(
+    action="ban or unban",
+    user="Target user",
+    reason="Reason for the action"
+)
+@app_commands.choices(action=[
+    app_commands.Choice(name="ban",   value="ban"),
+    app_commands.Choice(name="unban", value="unban"),
+])
+async def slash_manageban(interaction: discord.Interaction,
+                           action: str,
+                           user: discord.Member,
+                           reason: str):
+    if not has_role(interaction.user, [BAN_ROLE_ID]):
+        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
+
+    roles_owned = [r.name for r in user.roles if r.name != "@everyone"]
+
+    if action == "ban":
+        await user.ban(reason=reason, delete_message_days=0)
+        title, color = "User Banned 🚫", 0xed4245
+    else:
+        await interaction.guild.unban(discord.Object(id=user.id), reason=reason)
+        title, color = "User Unbanned ✅", 0x57f287
+
+    embed = discord.Embed(title=title, color=color)
+    embed.add_field(name="Actioned By",  value=f"{interaction.user} ({interaction.user.id})", inline=False)
+    embed.add_field(name="Target User",  value=f"{user} ({user.id})",                          inline=False)
+    embed.add_field(name="Roles Owned",  value=", ".join(roles_owned) if roles_owned else "None", inline=False)
+    embed.add_field(name="Reason",       value=reason,                                          inline=False)
+    embed.add_field(name="Time",         value=ts_now(),                                        inline=False)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
 
 # =========================
 # TOS
 # =========================
-@bot.command()
-async def tos(ctx):
-    ch  = ctx.guild.get_channel(TOS_CH)
+@bot.tree.command(name="tos", description="Display the Terms of Service", guild=GUILD)
+async def slash_tos(interaction: discord.Interaction):
+    ch  = interaction.guild.get_channel(TOS_CH)
     ref = ch.mention if ch else "the TOS channel"
     embed = discord.Embed(
         title="📜 Terms of Service",
         description=f"Please read our full TOS in {ref}.",
         color=0x5865f2
     )
-    await ctx.send(embed=embed)
+    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
+    await interaction.response.send_message(embed=embed)
+
 
 # =========================
-# READY
+# ON READY
 # =========================
 @bot.event
 async def on_ready():
@@ -783,5 +851,9 @@ async def on_ready():
     bot.add_view(CloseView())
     bot.add_view(MMPanel())
     bot.add_view(MercyView())
+    bot.tree.copy_global_to(guild=GUILD)
+    synced = await bot.tree.sync(guild=GUILD)
+    print(f"✅ Synced {len(synced)} slash commands to guild {GUILD_ID}")
+
 
 bot.run(os.getenv("DISCORD_TOKEN"))
