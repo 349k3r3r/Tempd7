@@ -21,7 +21,6 @@ GUILD    = discord.Object(id=GUILD_ID)
 CATEGORY_ID   = 1509993737915338802
 TRANSCRIPT_CH = 1509993884355268680
 TOS_CH        = 1509993970413994054
-LOG_CH        = 1509993876742476000
 
 MERCY_ROLE  = 1509993713596895343
 HITTER_ROLE = 1509993713596895343   # role given on mercy accept
@@ -59,7 +58,6 @@ def save(name, data):
         json.dump(data, f, indent=4)
 
 vouches_data = load("vouches.json")
-profit_data  = load("profit.json")
 
 TICKETS    = {}
 temp_store = {}
@@ -607,91 +605,29 @@ async def slash_vouches(interaction: discord.Interaction, user: discord.Member =
 
 
 # =========================
-# PROFIT / LOG SYSTEM
+# TRANSFER TICKET
 # =========================
-async def send_log_embed(interaction: discord.Interaction,
-                         mm: discord.Member, hitter: discord.Member,
-                         hit_info: str, split: str):
-    uid = str(mm.id)
-    try:
-        split_num = int(split.replace(",", "").replace("$", "").strip())
-        profit_data[uid] = profit_data.get(uid, 0) + split_num
-        save("profit.json", profit_data)
-        total_str = f"{profit_data[uid]:,}"
-    except ValueError:
-        total_str = "N/A"
-
-    log_ch = interaction.guild.get_channel(LOG_CH)
-    if not log_ch:
-        return await interaction.followup.send("⚠️ Log channel not found.", ephemeral=True)
-
-    embed = discord.Embed(title="💰 Trade Log", color=0x57f287, timestamp=discord.utils.utcnow())
-    embed.add_field(name="Middleman", value=mm.mention,     inline=True)
-    embed.add_field(name="Hitter",    value=hitter.mention, inline=True)
-    embed.add_field(name="\u200b",    value="\u200b",        inline=True)
-    embed.add_field(name="Hit Info",  value=hit_info,        inline=False)
-    embed.add_field(name="Split",     value=split,           inline=True)
-    embed.add_field(name="MM Total",  value=total_str,       inline=True)
-    embed.set_footer(text=f"Logged by {interaction.user} • {interaction.user.id}")
-    await log_ch.send(embed=embed)
-
-
-@bot.tree.command(name="log", description="Log a hit/trade", guild=GUILD)
-@app_commands.describe(hitter="The hitter", hit_info="What was hit", split="Your split amount")
-async def slash_log(interaction: discord.Interaction,
-                    hitter: discord.Member, hit_info: str, split: str):
+@bot.tree.command(name="transfer", description="Transfer this ticket to another middleman", guild=GUILD)
+@app_commands.describe(user="Middleman to transfer the ticket to")
+async def slash_transfer(interaction: discord.Interaction, user: discord.Member):
     if not is_mm(interaction.user):
         return await interaction.response.send_message("❌ No permission.", ephemeral=True)
-    await interaction.response.defer(ephemeral=True)
-    await send_log_embed(interaction, interaction.user, hitter, hit_info, split)
-    await interaction.followup.send("✅ Logged.", ephemeral=True)
+    ch = interaction.channel
+    if ch.id not in TICKETS:
+        return await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
 
+    # Give new MM full access, remove send from the one transferring
+    await ch.set_permissions(user, view_channel=True, send_messages=True)
+    await ch.set_permissions(interaction.user, view_channel=True, send_messages=False)
 
-@bot.tree.command(name="altlog", description="Log a hit on behalf of another MM", guild=GUILD)
-@app_commands.describe(mm="The middleman", hitter="The hitter", hit_info="What was hit", split="Split amount")
-async def slash_altlog(interaction: discord.Interaction,
-                       mm: discord.Member, hitter: discord.Member,
-                       hit_info: str, split: str):
-    if not is_mm(interaction.user):
-        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
-    await interaction.response.defer(ephemeral=True)
-    await send_log_embed(interaction, mm, hitter, hit_info, split)
-    await interaction.followup.send("✅ Logged.", ephemeral=True)
+    # Update claimed
+    TICKETS[ch.id]["claimed"] = user.id
 
-
-@bot.tree.command(name="checkprofit", description="Check a user's logged profit", guild=GUILD)
-@app_commands.describe(user="User to check (leave blank for yourself)")
-async def slash_checkprofit(interaction: discord.Interaction, user: discord.Member = None):
-    target = user or interaction.user
-    uid    = str(target.id)
-    amount = profit_data.get(uid, 0)
-    embed  = discord.Embed(
-        title="💰 Profit",
-        description=f"{target.mention} has logged **{amount:,}** in profit.",
-        color=0x57f287
-    )
+    embed = discord.Embed(title="🔄 Ticket Transferred", color=0x2b2d31)
+    embed.add_field(name="Transferred From", value=interaction.user.mention, inline=True)
+    embed.add_field(name="Transferred To",   value=user.mention,             inline=True)
     embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="transfer", description="Transfer profit to another MM", guild=GUILD)
-@app_commands.describe(user="Recipient", amount="Amount to transfer")
-async def slash_transfer(interaction: discord.Interaction, user: discord.Member, amount: int):
-    if not is_mm(interaction.user):
-        return await interaction.response.send_message("❌ No permission.", ephemeral=True)
-    sender_id   = str(interaction.user.id)
-    receiver_id = str(user.id)
-    if profit_data.get(sender_id, 0) < amount:
-        return await interaction.response.send_message("❌ Insufficient balance.", ephemeral=True)
-    profit_data[sender_id]   = profit_data.get(sender_id, 0) - amount
-    profit_data[receiver_id] = profit_data.get(receiver_id, 0) + amount
-    save("profit.json", profit_data)
-    embed = discord.Embed(
-        description=f"💸 Transferred **{amount:,}** from {interaction.user.mention} to {user.mention}.",
-        color=0x57f287
-    )
-    embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(content=user.mention, embed=embed)
 
 
 # =========================
