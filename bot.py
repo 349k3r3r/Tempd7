@@ -301,4 +301,6 @@ async def tos(ctx):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-bot.run("YOUR_TOKEN_HERE")
+import os
+
+bot.run(os.getenv("TOKEN"))
