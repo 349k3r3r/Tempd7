@@ -297,7 +297,7 @@ class ClaimView(discord.ui.View):
         claimed_embed.set_footer(text=f"{FOOTER} • Today at {time_short()}")
 
         await interaction.response.defer()
-        await ch.send(embed=claimed_embed, view=CloseView())
+        await ch.send(embed=claimed_embed)
 
     @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="v:ticket_close_main")
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
